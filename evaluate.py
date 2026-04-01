@@ -15,6 +15,7 @@ import gymnasium as gym
 from stable_baselines3 import DQN, PPO, A2C, SAC, DDPG, TD3
 
 from configs import CONFIGS
+from reward_shaping_wrapper import reward_shaping_wrapper
 from train import ALGORITHMS
 
 
@@ -23,6 +24,10 @@ def evaluate(
     model_path: str | None = None,
     n_episodes: int = 10,
     render: bool = False,
+    wrapper: bool = False,
+    terminal_reward: bool = False,
+    shaping_scale: float = 0.05,
+
 ) -> dict[str, float]:
     """Load a trained model and evaluate it for *n_episodes* episodes.
 
@@ -61,7 +66,16 @@ def evaluate(
 
     # ── evaluation loop ──────────────────────────────────────────────
     render_mode = "human" if render else None
+    
     env = gym.make(env_id, render_mode=render_mode)
+
+    if wrapper:
+
+        if terminal_reward:
+            print("Applying reward shaping wrapper with terminal reward only.")
+            shaping_scale = 0.0  # Disable dense shaping
+
+        env = reward_shaping_wrapper(env, shaping_scale=shaping_scale)
 
     episode_rewards: list[float] = []
     episode_lengths: list[int] = []
@@ -125,9 +139,25 @@ if __name__ == "__main__":
         help="Number of evaluation episodes (default: 10).",
     )
     parser.add_argument(
+        "--shaping_scale",
+        type=float,
+        default=0.05,
+        help="Scale for reward shaping (default: 0.05).",
+    )
+    parser.add_argument(
         "--render",
         action="store_true",
         help="Render the environment (requires a display).",
+    )
+    parser.add_argument(
+        "--wrapper",
+        action="store_true",
+        help="Apply reward shaping wrapper.",
+    )
+    parser.add_argument(
+        "--terminal_reward",
+        action="store_true",
+        help="Use terminal reward only for reward shaping.",
     )
     args = parser.parse_args()
     evaluate(
@@ -135,4 +165,7 @@ if __name__ == "__main__":
         model_path=args.model_path,
         n_episodes=args.episodes,
         render=args.render,
+        wrapper=args.wrapper,
+        terminal_reward=args.terminal_reward,
+        shaping_scale=args.shaping_scale
     )

@@ -1,6 +1,10 @@
 """
 Hyperparameter configurations for each RL algorithm on LunarLander.
 
+DQN is fundamentally for discrete actions.
+PPO and A2C can work in both settings in theory.
+SAC, DDPG, and TD3 are continuous-control algorithms.
+
 Discrete-action algorithms (LunarLander-v3):
   DQN, PPO, A2C
 

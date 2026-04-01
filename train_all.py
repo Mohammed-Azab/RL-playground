@@ -6,6 +6,8 @@ Usage:
     python train_all.py --algos DQN PPO SAC     # subset
     python train_all.py --timesteps 200000       # quick smoke-test
     python train_all.py --seed 0
+    python train_all.py --algos SAC --wrapper --terminal_reward
+    python train_all.py --algos SAC --wrapper --shaping_scale 0.05
 """
 
 import argparse
@@ -17,7 +19,7 @@ from train import train, ALGORITHMS
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Train all LunarLander baselines sequentially."
+        description="Train LunarLander algorithms sequentially (baseline or wrapper variants)."
     )
     parser.add_argument(
         "--algos",
@@ -38,6 +40,22 @@ def main() -> None:
         default=42,
         help="Random seed (default: 42).",
     )
+    parser.add_argument(
+        "--wrapper",
+        action="store_true",
+        help="Apply the custom reward wrapper during training.",
+    )
+    parser.add_argument(
+        "--terminal_reward",
+        action="store_true",
+        help="Use terminal reward only with the wrapper.",
+    )
+    parser.add_argument(
+        "--shaping_scale",
+        type=float,
+        default=0.05,
+        help="Scale for dense reward shaping (default: 0.05).",
+    )
     args = parser.parse_args()
 
     total_start = time.time()
@@ -49,7 +67,14 @@ def main() -> None:
         print(f"#  Training {algo}")
         print(f"{'#' * 60}")
         try:
-            train(algo, timesteps=args.timesteps, seed=args.seed)
+            train(
+                algo,
+                timesteps=args.timesteps,
+                seed=args.seed,
+                wrapper=args.wrapper,
+                terminal_reward=args.terminal_reward,
+                shaping_scale=args.shaping_scale,
+            )
             elapsed = time.time() - start
             results[algo] = f"✓ done ({elapsed / 60:.1f} min)"
         except Exception as exc:  # noqa: BLE001

@@ -8,6 +8,7 @@ Monitor wrapper (one per algorithm) from ``results/<ALGO>/logs/``.
 Usage:
     python compare.py                         # compare all trained algos
     python compare.py --algos DQN PPO A2C     # subset
+    python compare.py --runs DQN DQN:wrapped_terminal_reward SAC:wrapped_reward_shaping_s0p05
     python compare.py --window 20             # smoothing window (episodes)
     python compare.py --output my_plot.png    # custom output filename
     python compare.py --no_save               # only display, don't save
@@ -27,6 +28,49 @@ from configs import CONFIGS
 
 # Color palette — one color per algorithm (up to 6)
 _PALETTE = ["#E63946", "#457B9D", "#2A9D8F", "#E9C46A", "#F4A261", "#6A4C93"]
+
+
+def _format_scale(scale: float) -> str:
+    formatted = f"{scale:.3f}".rstrip("0").rstrip(".")
+    return formatted.replace(".", "p")
+
+
+def _run_variant_name(
+    wrapper: bool,
+    terminal_reward: bool,
+    shaping_scale: float,
+) -> str:
+    if not wrapper:
+        return "baseline"
+    if terminal_reward:
+        return "wrapped_terminal_reward"
+    return f"wrapped_reward_shaping_s{_format_scale(shaping_scale)}"
+
+
+def _parse_run_spec(spec: str) -> tuple[str, str]:
+    if ":" in spec:
+        algo, variant = spec.split(":", 1)
+    else:
+        algo, variant = spec, "baseline"
+
+    if algo not in CONFIGS:
+        raise ValueError(
+            f"Unknown algorithm '{algo}'. Choose from: {', '.join(CONFIGS)}"
+        )
+
+    return algo, variant
+
+
+def _run_log_dir(algo: str, variant: str) -> str:
+    if variant == "baseline":
+        return os.path.join("results", algo, "logs")
+    return os.path.join("results", algo, variant, "logs")
+
+
+def _run_label(algo: str, variant: str) -> str:
+    if variant == "baseline":
+        return algo
+    return f"{algo} ({variant.replace('_', ' ')})"
 
 
 def _load_monitor_csv(log_dir: str) -> pd.DataFrame | None:
@@ -74,6 +118,7 @@ def _smooth(values: np.ndarray, window: int) -> np.ndarray:
 
 def compare(
     algos: list[str] | None = None,
+    runs: list[str] | None = None,
     window: int = 20,
     output: str = "results/comparison.png",
     no_save: bool = False,
@@ -83,13 +128,21 @@ def compare(
     Args:
         algos:   List of algorithm names.  ``None`` → use all entries in
                  CONFIGS for which a monitor log exists.
+        runs:    Explicit run specs in the form ``ALGO`` or ``ALGO:VARIANT``.
+                 When provided, this overrides ``algos``.
         window:  Episode-level rolling-average window for smoothing.
         output:  File path to save the resulting figure.
         no_save: If ``True``, display the figure interactively instead of
                  saving it.
     """
-    if algos is None:
-        algos = list(CONFIGS.keys())
+    if runs is not None:
+        run_specs = runs
+    else:
+        if algos is None:
+            algos = list(CONFIGS.keys())
+        run_specs = list(algos)
+
+    parsed_runs: list[tuple[str, str]] = [_parse_run_spec(spec) for spec in run_specs]
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=False)
     ax_disc = axes[0]  # discrete-action algorithms
@@ -100,9 +153,15 @@ def compare(
         "Continuous-Action Algorithms\n(LunarLanderContinuous-v3)", fontsize=13
     )
 
-    discrete_algos = [a for a in algos if CONFIGS[a]["env"] == "LunarLander-v3"]
+    discrete_algos = [
+        (algo, variant)
+        for algo, variant in parsed_runs
+        if CONFIGS[algo]["env"] == "LunarLander-v3"
+    ]
     continuous_algos = [
-        a for a in algos if CONFIGS[a]["env"] == "LunarLanderContinuous-v3"
+        (algo, variant)
+        for algo, variant in parsed_runs
+        if CONFIGS[algo]["env"] == "LunarLanderContinuous-v3"
     ]
 
     found_any = False
@@ -110,12 +169,12 @@ def compare(
         (discrete_algos, ax_disc, 0),
         (continuous_algos, ax_cont, 3),
     ]:
-        for i, algo in enumerate(group):
-            log_dir = os.path.join("results", algo, "logs")
+        for i, (algo, variant) in enumerate(group):
+            log_dir = _run_log_dir(algo, variant)
             df = _load_monitor_csv(log_dir)
             if df is None or df.empty:
                 print(
-                    f"  [skip] No monitor log found for {algo} in '{log_dir}'. "
+                    f"  [skip] No monitor log found for {algo} ({variant}) in '{log_dir}'. "
                     f"Run: python train.py --algo {algo}"
                 )
                 continue
@@ -125,9 +184,11 @@ def compare(
             y = df["reward"].to_numpy()
             y_smooth = _smooth(y, window)
             color = _PALETTE[(color_offset + i) % len(_PALETTE)]
+            linestyle = "-" if variant == "baseline" else ("--" if "terminal" in variant else "-.")
+            label = _run_label(algo, variant)
 
-            ax.plot(x, y, alpha=0.15, color=color, linewidth=0.8)
-            ax.plot(x, y_smooth, label=algo, color=color, linewidth=2.0)
+            ax.plot(x, y, alpha=0.15, color=color, linewidth=0.8, linestyle=linestyle)
+            ax.plot(x, y_smooth, label=label, color=color, linewidth=2.0, linestyle=linestyle)
 
     if not found_any:
         print(
@@ -174,6 +235,15 @@ if __name__ == "__main__":
         help="Subset of algorithms to include (default: all trained).",
     )
     parser.add_argument(
+        "--runs",
+        nargs="+",
+        default=None,
+        help=(
+            "Explicit run specs to include, using ALGO or ALGO:VARIANT. "
+            "Example: DQN DQN:wrapped_terminal_reward SAC:wrapped_reward_shaping_s0p05"
+        ),
+    )
+    parser.add_argument(
         "--window",
         type=int,
         default=20,
@@ -193,6 +263,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     compare(
         algos=args.algos,
+        runs=args.runs,
         window=args.window,
         output=args.output,
         no_save=args.no_save,
