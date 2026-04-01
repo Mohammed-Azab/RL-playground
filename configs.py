@@ -1,10 +1,10 @@
 """
 Hyperparameter configurations for each RL algorithm on LunarLander.
 
-Discrete-action algorithms (LunarLander-v2):
+Discrete-action algorithms (LunarLander-v3):
   DQN, PPO, A2C
 
-Continuous-action algorithms (LunarLanderContinuous-v2):
+Continuous-action algorithms (LunarLanderContinuous-v3):
   SAC, DDPG, TD3
 """
 

@@ -4,7 +4,7 @@ train.py — Train a single RL algorithm on LunarLander.
 Usage:
     python train.py --algo PPO
     python train.py --algo DQN --timesteps 300000 --seed 0
-    python train.py --algo SAC  # uses LunarLanderContinuous-v2 automatically
+    python train.py --algo SAC  
 """
 
 import os
