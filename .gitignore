@@ -1,3 +1,9 @@
+# ── RL playground ────────────────────────────────────────────────────────────
+# Trained models, episode logs, and generated plots (too large for git)
+results/*/
+results/*.png
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
