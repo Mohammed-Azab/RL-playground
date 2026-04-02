@@ -19,6 +19,35 @@ from reward_shaping_wrapper import reward_shaping_wrapper
 from train import ALGORITHMS
 
 
+def _format_scale(scale: float) -> str:
+    formatted = f"{scale:.3f}".rstrip("0").rstrip(".")
+    return formatted.replace(".", "p")
+
+
+def _run_variant_name(
+    wrapper: bool,
+    terminal_reward: bool,
+    shaping_scale: float,
+) -> str:
+    if not wrapper:
+        return "baseline"
+    if terminal_reward:
+        return "wrapped_terminal_reward"
+    return f"wrapped_reward_shaping_s{_format_scale(shaping_scale)}"
+
+
+def _default_model_base(
+    algo_name: str,
+    wrapper: bool,
+    terminal_reward: bool,
+    shaping_scale: float,
+) -> str:
+    run_variant = _run_variant_name(wrapper, terminal_reward, shaping_scale)
+    if run_variant == "baseline":
+        return os.path.join("results", algo_name)
+    return os.path.join("results", algo_name, run_variant)
+
+
 def evaluate(
     algo_name: str,
     model_path: str | None = None,
@@ -45,13 +74,21 @@ def evaluate(
         raise ValueError(
             f"Unknown algorithm '{algo_name}'. Choose from: {', '.join(CONFIGS)}"
         )
+    if terminal_reward and not wrapper:
+        raise ValueError("--terminal_reward requires --wrapper.")
 
     env_id = CONFIGS[algo_name]["env"]
 
     # ── resolve model path ───────────────────────────────────────────
     if model_path is None:
-        best = os.path.join("results", algo_name, "models", "best_model")
-        final = os.path.join("results", algo_name, "models", "final_model")
+        base_dir = _default_model_base(
+            algo_name,
+            wrapper=wrapper,
+            terminal_reward=terminal_reward,
+            shaping_scale=shaping_scale,
+        )
+        best = os.path.join(base_dir, "models", "best_model")
+        final = os.path.join(base_dir, "models", "final_model")
         model_path = best if os.path.exists(best + ".zip") else final
     if not os.path.exists(model_path + ".zip") and not os.path.exists(model_path):
         raise FileNotFoundError(
@@ -130,7 +167,7 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Path to model .zip (without extension). "
-        "Defaults to results/<algo>/models/best_model.",
+        "Defaults to the best model for the selected run variant.",
     )
     parser.add_argument(
         "--episodes",
