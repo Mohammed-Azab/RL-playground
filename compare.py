@@ -138,19 +138,22 @@ def compare(
     window: int = 20,
     output: str | None = None,
     no_save: bool = False,
+    env_type: str = "both",
 ) -> None:
     """Plot a reward-vs-timesteps comparison for all (or the given) algorithms.
 
     Args:
-        algos:   List of algorithm names.  ``None`` → use all entries in
-                 CONFIGS for which a monitor log exists.
-        runs:    Explicit run specs in the form ``ALGO`` or ``ALGO:VARIANT``.
-                 When provided, this overrides ``algos``.
-        window:  Episode-level rolling-average window for smoothing.
-        output:  File path to save the resulting figure. If omitted, a
-             unique filename is generated in results/comparisons.
-        no_save: If ``True``, display the figure interactively instead of
-                 saving it.
+        algos:    List of algorithm names.  ``None`` → use all entries in
+                  CONFIGS for which a monitor log exists.
+        runs:     Explicit run specs in the form ``ALGO`` or ``ALGO:VARIANT``.
+                  When provided, this overrides ``algos``.
+        window:   Episode-level rolling-average window for smoothing.
+        output:   File path to save the resulting figure. If omitted, a
+                  unique filename is generated in results/comparisons.
+        no_save:  If ``True``, display the figure interactively instead of
+                  saving it.
+        env_type: Environment type to plot ("discrete", "continuous", or "both").
+                  Default is "both".
     """
     if runs is not None:
         run_specs = runs
@@ -164,14 +167,35 @@ def compare(
     if output is None:
         output = _default_output_path(run_specs)
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=False)
-    ax_disc = axes[0]  # discrete-action algorithms
-    ax_cont = axes[1]  # continuous-action algorithms
+    # Validate env_type
+    if env_type not in ("discrete", "continuous", "both"):
+        raise ValueError(
+            f"env_type must be 'discrete', 'continuous', or 'both', got '{env_type}'"
+        )
 
-    ax_disc.set_title("Discrete-Action Algorithms\n(LunarLander-v3)", fontsize=13)
-    ax_cont.set_title(
-        "Continuous-Action Algorithms\n(LunarLanderContinuous-v3)", fontsize=13
-    )
+    # Determine which subplots to create
+    show_discrete = env_type in ("discrete", "both")
+    show_continuous = env_type in ("continuous", "both")
+
+    num_subplots = int(show_discrete) + int(show_continuous)
+    fig, axes = plt.subplots(1, num_subplots, figsize=(7 * num_subplots, 6), sharey=False)
+    if num_subplots == 1:
+        axes = [axes]
+
+    ax_disc = None
+    ax_cont = None
+    subplot_idx = 0
+
+    if show_discrete:
+        ax_disc = axes[subplot_idx]
+        subplot_idx += 1
+        ax_disc.set_title("Discrete-Action Algorithms\n(LunarLander-v3)", fontsize=13)
+
+    if show_continuous:
+        ax_cont = axes[subplot_idx]
+        ax_cont.set_title(
+            "Continuous-Action Algorithms\n(LunarLanderContinuous-v3)", fontsize=13
+        )
 
     discrete_algos = [
         (algo, variant)
@@ -185,10 +209,13 @@ def compare(
     ]
 
     found_any = False
-    for group, ax, color_offset in [
-        (discrete_algos, ax_disc, 0),
-        (continuous_algos, ax_cont, 3),
-    ]:
+    plot_groups = []
+    if show_discrete and discrete_algos:
+        plot_groups.append((discrete_algos, ax_disc, 0))
+    if show_continuous and continuous_algos:
+        plot_groups.append((continuous_algos, ax_cont, 3))
+
+    for group, ax, color_offset in plot_groups:
         for i, (algo, variant) in enumerate(group):
             log_dir = _run_log_dir(algo, variant)
             df = _load_monitor_csv(log_dir)
@@ -219,10 +246,11 @@ def compare(
         return
 
     for ax in axes:
-        ax.axhline(200, color="black", linestyle="--", linewidth=1, alpha=0.5,
-                   label="Solved (≥200)")
-        ax.set_xlabel("Training Timesteps", fontsize=11)
-        ax.set_ylabel("Episode Reward", fontsize=11)
+        if ax is not None:
+            ax.axhline(200, color="black", linestyle="--", linewidth=1, alpha=0.5,
+                       label="Solved (≥200)")
+            ax.set_xlabel("Training Timesteps", fontsize=11)
+            ax.set_ylabel("Episode Reward", fontsize=11)
         ax.xaxis.set_major_formatter(
             mticker.FuncFormatter(lambda v, _: f"{v / 1e6:.1f}M" if v >= 1e6
                                   else f"{v / 1e3:.0f}K")
@@ -270,6 +298,13 @@ if __name__ == "__main__":
         help="Rolling-average smoothing window in episodes (default: 20).",
     )
     parser.add_argument(
+        "--env_type",
+        type=str,
+        default="both",
+        choices=["discrete", "continuous", "both"],
+        help="Environment type to plot: 'discrete', 'continuous', or 'both' (default: both).",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default=None,
@@ -290,4 +325,5 @@ if __name__ == "__main__":
         window=args.window,
         output=args.output,
         no_save=args.no_save,
+        env_type=args.env_type,
     )
