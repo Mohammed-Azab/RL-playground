@@ -10,6 +10,8 @@ Discrete-action algorithms (LunarLander-v3):
 
 Continuous-action algorithms (LunarLanderContinuous-v3):
   SAC, DDPG, TD3
+
+  using MlpPolicy for all algorithms, which is Multi-Layer Perceptron Policy (a feedforward neural network).
 """
 
 CONFIGS = {
