@@ -17,6 +17,7 @@ Usage:
 import os
 import argparse
 import glob as _glob
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -73,6 +74,21 @@ def _run_label(algo: str, variant: str) -> str:
     return f"{algo} ({variant.replace('_', ' ')})"
 
 
+def _default_output_path(run_specs: list[str]) -> str:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_specs = [
+        spec.replace(":", "_").replace("/", "_").replace(" ", "_")
+        for spec in run_specs
+    ]
+    if safe_specs:
+        prefix = "vs_".join(safe_specs[:3])
+        if len(safe_specs) > 3:
+            prefix += f"_plus{len(safe_specs) - 3}"
+    else:
+        prefix = "all_runs"
+    return os.path.join("results", "comparisons", f"{prefix}_{timestamp}.png")
+
+
 def _load_monitor_csv(log_dir: str) -> pd.DataFrame | None:
     """Return a DataFrame with cumulative *steps* and *episode reward* columns,
     or ``None`` if no monitor file is found in *log_dir*."""
@@ -120,7 +136,7 @@ def compare(
     algos: list[str] | None = None,
     runs: list[str] | None = None,
     window: int = 20,
-    output: str = "results/comparison.png",
+    output: str | None = None,
     no_save: bool = False,
 ) -> None:
     """Plot a reward-vs-timesteps comparison for all (or the given) algorithms.
@@ -131,7 +147,8 @@ def compare(
         runs:    Explicit run specs in the form ``ALGO`` or ``ALGO:VARIANT``.
                  When provided, this overrides ``algos``.
         window:  Episode-level rolling-average window for smoothing.
-        output:  File path to save the resulting figure.
+        output:  File path to save the resulting figure. If omitted, a
+             unique filename is generated in results/comparisons.
         no_save: If ``True``, display the figure interactively instead of
                  saving it.
     """
@@ -143,6 +160,9 @@ def compare(
         run_specs = list(algos)
 
     parsed_runs: list[tuple[str, str]] = [_parse_run_spec(spec) for spec in run_specs]
+
+    if output is None:
+        output = _default_output_path(run_specs)
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=False)
     ax_disc = axes[0]  # discrete-action algorithms
@@ -252,8 +272,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type=str,
-        default="results/comparison.png",
-        help="Output file path for the plot (default: results/comparison.png).",
+        default=None,
+        help=(
+            "Output file path for the plot. "
+            "Default: auto-generated in results/comparisons/."
+        ),
     )
     parser.add_argument(
         "--no_save",
