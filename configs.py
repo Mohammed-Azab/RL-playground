@@ -127,7 +127,7 @@ CONFIGS = {
     # PPO + Intrinsic Curiosity Module  (discrete actions)
     # ------------------------------------------------------------------
     "PPO_ICM": {
-        "env": "LunarLander-v3",
+        "env": "LunarLanderContinuous-v3",
         "timesteps": 1_000_000,
         "hyperparams": {
             "policy": "MlpPolicy",
