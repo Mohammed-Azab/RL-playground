@@ -16,6 +16,7 @@ from stable_baselines3 import DQN, PPO, A2C, SAC, DDPG, TD3
 
 from configs import CONFIGS
 from reward_shaping_wrapper import reward_shaping_wrapper
+from icm import icm_wrapper
 from train import ALGORITHMS
 
 
@@ -28,7 +29,11 @@ def _run_variant_name(
     wrapper: bool,
     terminal_reward: bool,
     shaping_scale: float,
+    icm: bool = False,
+    icm_only: bool = False,
 ) -> str:
+    if icm:
+        return "wrapped_icm_only" if icm_only else "wrapped_icm"
     if not wrapper:
         return "baseline"
     if terminal_reward:
@@ -41,8 +46,10 @@ def _default_model_base(
     wrapper: bool,
     terminal_reward: bool,
     shaping_scale: float,
+    icm: bool = False,
+    icm_only: bool = False,
 ) -> str:
-    run_variant = _run_variant_name(wrapper, terminal_reward, shaping_scale)
+    run_variant = _run_variant_name(wrapper, terminal_reward, shaping_scale, icm, icm_only)
     if run_variant == "baseline":
         return os.path.join("results", algo_name)
     return os.path.join("results", algo_name, run_variant)
@@ -56,7 +63,9 @@ def evaluate(
     wrapper: bool = False,
     terminal_reward: bool = False,
     shaping_scale: float = 0.05,
-
+    icm: bool = False,
+    icm_only: bool = False,
+    icm_beta: float = 1.0,
 ) -> dict[str, float]:
     """Load a trained model and evaluate it for *n_episodes* episodes.
 
@@ -86,6 +95,8 @@ def evaluate(
             wrapper=wrapper,
             terminal_reward=terminal_reward,
             shaping_scale=shaping_scale,
+            icm=icm,
+            icm_only=icm_only,
         )
         best = os.path.join(base_dir, "models", "best_model")
         final = os.path.join(base_dir, "models", "final_model")
@@ -106,12 +117,18 @@ def evaluate(
     
     env = gym.make(env_id, render_mode=render_mode)
 
-    if wrapper:
-
+    if icm:
+        icm_cfg = CONFIGS[algo_name].get("icm", {})
+        env = icm_wrapper(
+            env,
+            icm_only=icm_only,
+            icm_beta=icm_beta,
+            **icm_cfg,
+        )
+    elif wrapper:
         if terminal_reward:
             print("Applying reward shaping wrapper with terminal reward only.")
             shaping_scale = 0.0  # Disable dense shaping
-
         env = reward_shaping_wrapper(env, shaping_scale=shaping_scale)
 
     episode_rewards: list[float] = []
@@ -196,6 +213,22 @@ if __name__ == "__main__":
         action="store_true",
         help="Use terminal reward only for reward shaping.",
     )
+    parser.add_argument(
+        "--icm",
+        action="store_true",
+        help="Apply ICM curiosity wrapper during evaluation.",
+    )
+    parser.add_argument(
+        "--icm_only",
+        action="store_true",
+        help="Suppress extrinsic reward during evaluation.",
+    )
+    parser.add_argument(
+        "--icm_beta",
+        type=float,
+        default=1.0,
+        help="Weight on intrinsic reward in additive mode (default: 1.0).",
+    )
     args = parser.parse_args()
     evaluate(
         args.algo,
@@ -204,5 +237,8 @@ if __name__ == "__main__":
         render=args.render,
         wrapper=args.wrapper,
         terminal_reward=args.terminal_reward,
-        shaping_scale=args.shaping_scale
+        shaping_scale=args.shaping_scale,
+        icm=args.icm,
+        icm_only=args.icm_only,
+        icm_beta=args.icm_beta,
     )
