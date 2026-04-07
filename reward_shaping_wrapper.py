@@ -8,18 +8,26 @@ class RewardShapingWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env, shaping_scale: float = 0.05):
         super().__init__(env)
         self.shaping_scale = shaping_scale
+        self._episode_reward = 0.0
+
+    def reset(self, **kwargs):
+        self._episode_reward = 0.0
+        obs, info = self.env.reset(**kwargs)
+        return obs, info
 
     def step(self, action):
         obs, original_reward, terminated, truncated, info = self.env.step(action)
+        self._episode_reward += float(original_reward)
 
         done = terminated or truncated
         reward = 0.0
 
         if done:
-            if float(original_reward) >= 200.0:
+            if self._episode_reward >= 200.0:
                 reward = 100.0
             else:
                 reward = -100.0
+            self._episode_reward = 0.0
 
         x, y, vx, vy, angle, _angular_vel, left_leg, right_leg = obs
 
