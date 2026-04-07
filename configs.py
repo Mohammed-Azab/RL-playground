@@ -123,4 +123,33 @@ CONFIGS = {
             "policy_delay": 2,
         },
     },
+    # ------------------------------------------------------------------
+    # PPO + Intrinsic Curiosity Module  (discrete actions)
+    # ------------------------------------------------------------------
+    "PPO_ICM": {
+        "env": "LunarLander-v3",
+        "timesteps": 1_000_000,
+        "hyperparams": {
+            "policy": "MlpPolicy",
+            "learning_rate": 3e-4,
+            "n_steps": 2048,
+            "batch_size": 64,
+            "n_epochs": 10,
+            "gamma": 0.999,
+            "gae_lambda": 0.98,
+            "ent_coef": 0.0,
+            "clip_range": 0.2,
+            "vf_coef": 0.5,
+            "max_grad_norm": 0.5,
+        },
+        "icm": {
+            "feature_dim": 64,
+            "lr": 1e-3,
+            "eta": 0.01,
+            "beta": 0.2,
+            "update_freq": 128,
+            "buffer_capacity": 1000,
+            "batch_size": 64,
+        },
+    },
 }
