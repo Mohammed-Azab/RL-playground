@@ -56,6 +56,22 @@ def main() -> None:
         default=0.05,
         help="Scale for dense reward shaping (default: 0.05).",
     )
+    parser.add_argument(
+        "--icm",
+        action="store_true",
+        help="Apply ICM curiosity wrapper (requires --algos PPO_ICM).",
+    )
+    parser.add_argument(
+        "--icm_only",
+        action="store_true",
+        help="Suppress extrinsic reward; use intrinsic only.",
+    )
+    parser.add_argument(
+        "--icm_beta",
+        type=float,
+        default=1.0,
+        help="Weight on intrinsic reward in additive mode (default: 1.0).",
+    )
     args = parser.parse_args()
 
     total_start = time.time()
@@ -74,6 +90,9 @@ def main() -> None:
                 wrapper=args.wrapper,
                 terminal_reward=args.terminal_reward,
                 shaping_scale=args.shaping_scale,
+                icm=args.icm,
+                icm_only=args.icm_only,
+                icm_beta=args.icm_beta,
             )
             elapsed = time.time() - start
             results[algo] = f"✓ done ({elapsed / 60:.1f} min)"
