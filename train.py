@@ -43,6 +43,8 @@ def _run_variant_name(
     icm_only: bool = False,
 ) -> str:
     if icm:
+        if wrapper and terminal_reward:
+            return "wrapped_icm_only_terminal" if icm_only else "wrapped_icm_terminal"
         return "wrapped_icm_only" if icm_only else "wrapped_icm"
     if not wrapper:
         return "baseline"
@@ -130,6 +132,9 @@ def train(
     eval_base_env = gym.make(env_id)
 
     if icm:
+        if wrapper and terminal_reward:
+            train_base_env = reward_shaping_wrapper(train_base_env, shaping_scale=0.0)
+            eval_base_env = reward_shaping_wrapper(eval_base_env, shaping_scale=0.0)
         icm_cfg = CONFIGS[algo_name].get("icm", {})
         train_base_env = icm_wrapper(
             train_base_env,
