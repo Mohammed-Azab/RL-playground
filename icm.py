@@ -7,9 +7,16 @@ derived from forward model prediction error in learned feature space.
 Three networks are trained jointly:
   - Encoder       φ: obs → feature vector
   - InverseModel  g: (z_t, z_{t+1}) → predicted action (trains φ to be action-predictive)
-  - ForwardModel  f: (z_t, one_hot(a)) → predicted z_{t+1}
+  - ForwardModel  f: (z_t, a_vec) → predicted z_{t+1}
 
-Intrinsic reward: r_i = eta/2 * ||f(z_t, one_hot(a)) - z_{t+1}||^2
+For discrete action spaces, a_vec is a one-hot vector.
+For continuous action spaces, a_vec is the raw action vector.
+
+Inverse model loss:
+  - Discrete:   CrossEntropy(predicted_logits, action_index)
+  - Continuous: MSE(predicted_action, actual_action)
+
+Intrinsic reward: r_i = eta/2 * ||f(z_t, a_vec) - z_{t+1}||^2
 ICM loss:         L = (1 - beta) * L_inv + beta * L_fwd
 Total reward:     r = r_extrinsic + icm_beta * r_i  (or r_i only if icm_only=True)
 """
@@ -38,12 +45,12 @@ class _Encoder(nn.Module):
 
 
 class _InverseModel(nn.Module):
-    def __init__(self, feature_dim: int, n_actions: int):
+    def __init__(self, feature_dim: int, action_dim: int):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(2 * feature_dim, 64),
             nn.ReLU(),
-            nn.Linear(64, n_actions),
+            nn.Linear(64, action_dim),
         )
 
     def forward(self, z_t: torch.Tensor, z_next: torch.Tensor) -> torch.Tensor:
@@ -51,23 +58,25 @@ class _InverseModel(nn.Module):
 
 
 class _ForwardModel(nn.Module):
-    def __init__(self, feature_dim: int, n_actions: int):
+    def __init__(self, feature_dim: int, action_dim: int):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(feature_dim + n_actions, 64),
+            nn.Linear(feature_dim + action_dim, 64),
             nn.ReLU(),
             nn.Linear(64, feature_dim),
         )
 
-    def forward(self, z_t: torch.Tensor, a_onehot: torch.Tensor) -> torch.Tensor:
-        return self.net(torch.cat([z_t, a_onehot], dim=-1))
+    def forward(self, z_t: torch.Tensor, a_vec: torch.Tensor) -> torch.Tensor:
+        return self.net(torch.cat([z_t, a_vec], dim=-1))
 
 
 class ICMWrapper(gym.Wrapper):
     """Gym wrapper that adds ICM-based intrinsic curiosity reward.
 
+    Supports both Discrete and Box (continuous) action spaces.
+
     Args:
-        env:              Wrapped environment (must have Discrete action space).
+        env:              Wrapped environment.
         feature_dim:      Encoder output dimension.
         lr:               Adam learning rate for ICM networks.
         eta:              Intrinsic reward scaling factor.
@@ -94,13 +103,18 @@ class ICMWrapper(gym.Wrapper):
     ):
         super().__init__(env)
 
-        assert isinstance(env.action_space, gym.spaces.Discrete), (
-            "ICMWrapper only supports Discrete action spaces."
-        )
-
         obs_dim = int(np.prod(env.observation_space.shape))
-        n_actions = int(env.action_space.n)
 
+        self._discrete = isinstance(env.action_space, gym.spaces.Discrete)
+        if self._discrete:
+            action_dim = int(env.action_space.n)
+        else:
+            assert isinstance(env.action_space, gym.spaces.Box), (
+                "ICMWrapper supports Discrete and Box action spaces only."
+            )
+            action_dim = int(np.prod(env.action_space.shape))
+
+        self.action_dim = action_dim
         self.feature_dim = feature_dim
         self.eta = eta
         self.beta = beta
@@ -108,12 +122,11 @@ class ICMWrapper(gym.Wrapper):
         self.icm_only = icm_only
         self.update_freq = update_freq
         self.batch_size = batch_size
-        self.n_actions = n_actions
 
         # Networks
         self.encoder = _Encoder(obs_dim, feature_dim)
-        self.inverse_model = _InverseModel(feature_dim, n_actions)
-        self.forward_model = _ForwardModel(feature_dim, n_actions)
+        self.inverse_model = _InverseModel(feature_dim, action_dim)
+        self.forward_model = _ForwardModel(feature_dim, action_dim)
         self.optimizer = torch.optim.Adam(
             list(self.encoder.parameters())
             + list(self.inverse_model.parameters())
@@ -140,7 +153,7 @@ class ICMWrapper(gym.Wrapper):
         obs_next, r_e, terminated, truncated, info = self.env.step(action)
 
         r_i = self._intrinsic_reward(self._obs_prev, action, obs_next)
-        self._buffer.append((self._obs_prev.copy(), int(action), obs_next.copy()))
+        self._buffer.append((self._obs_prev.copy(), np.array(action, dtype=np.float32), obs_next.copy()))
         self._step_count += 1
 
         if self._step_count % self.update_freq == 0 and len(self._buffer) >= self.batch_size:
@@ -158,19 +171,24 @@ class ICMWrapper(gym.Wrapper):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _encode(self, obs: np.ndarray) -> torch.Tensor:
-        t = torch.FloatTensor(obs).unsqueeze(0)
-        return self.encoder(t)
+    def _action_vec(self, action) -> torch.Tensor:
+        """Return a (1, action_dim) float tensor for a single action."""
+        if self._discrete:
+            a = torch.zeros(1, self.action_dim)
+            a[0, int(action)] = 1.0
+        else:
+            a = torch.FloatTensor(np.array(action, dtype=np.float32).flatten()).unsqueeze(0)
+        return a
 
-    def _intrinsic_reward(
-        self, obs: np.ndarray, action: int, obs_next: np.ndarray
-    ) -> float:
+    def _encode(self, obs: np.ndarray) -> torch.Tensor:
+        return self.encoder(torch.FloatTensor(obs).unsqueeze(0))
+
+    def _intrinsic_reward(self, obs: np.ndarray, action, obs_next: np.ndarray) -> float:
         with torch.no_grad():
             z_t = self._encode(obs)
             z_next = self._encode(obs_next)
-            a_onehot = torch.zeros(1, self.n_actions)
-            a_onehot[0, action] = 1.0
-            z_next_pred = self.forward_model(z_t, a_onehot)
+            a_vec = self._action_vec(action)
+            z_next_pred = self.forward_model(z_t, a_vec)
             r_i = (self.eta / 2.0) * F.mse_loss(z_next_pred, z_next, reduction="sum").item()
         return r_i
 
@@ -180,21 +198,30 @@ class ICMWrapper(gym.Wrapper):
 
         obs_t = torch.FloatTensor(np.array(obs_b))
         obs_next_t = torch.FloatTensor(np.array(obs_next_b))
-        actions_t = torch.LongTensor(actions_b)
+        actions_arr = np.array(actions_b, dtype=np.float32)
 
-        a_onehot = torch.zeros(self.batch_size, self.n_actions)
-        a_onehot.scatter_(1, actions_t.unsqueeze(1), 1.0)
+        if self._discrete:
+            # actions_arr shape: (batch,)  — scalar indices stored as float
+            actions_idx = torch.LongTensor(actions_arr.astype(np.int64))
+            a_vec = torch.zeros(self.batch_size, self.action_dim)
+            a_vec.scatter_(1, actions_idx.unsqueeze(1), 1.0)
+        else:
+            # actions_arr shape: (batch, action_dim)
+            a_vec = torch.FloatTensor(actions_arr.reshape(self.batch_size, self.action_dim))
 
         z_t = self.encoder(obs_t)
         z_next = self.encoder(obs_next_t)
 
         # Forward loss
-        z_next_pred = self.forward_model(z_t.detach(), a_onehot)
+        z_next_pred = self.forward_model(z_t.detach(), a_vec)
         l_fwd = 0.5 * F.mse_loss(z_next_pred, z_next.detach())
 
         # Inverse loss
         a_pred = self.inverse_model(z_t, z_next)
-        l_inv = F.cross_entropy(a_pred, actions_t)
+        if self._discrete:
+            l_inv = F.cross_entropy(a_pred, actions_idx)
+        else:
+            l_inv = F.mse_loss(a_pred, a_vec)
 
         loss = (1.0 - self.beta) * l_inv + self.beta * l_fwd
 
