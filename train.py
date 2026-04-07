@@ -17,6 +17,7 @@ from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 
 from configs import CONFIGS
 from reward_shaping_wrapper import reward_shaping_wrapper
+from icm import icm_wrapper
 
 ALGORITHMS = {
     "DQN": DQN,
@@ -25,6 +26,7 @@ ALGORITHMS = {
     "SAC": SAC,
     "DDPG": DDPG,
     "TD3": TD3,
+    "PPO_ICM": PPO,
 }
 
 
@@ -37,7 +39,11 @@ def _run_variant_name(
     wrapper: bool,
     terminal_reward: bool,
     shaping_scale: float,
+    icm: bool = False,
+    icm_only: bool = False,
 ) -> str:
+    if icm:
+        return "wrapped_icm_only" if icm_only else "wrapped_icm"
     if not wrapper:
         return "baseline"
     if terminal_reward:
@@ -60,17 +66,23 @@ def train(
     wrapper: bool = False,
     terminal_reward: bool = False,
     shaping_scale: float = 0.05,
+    icm: bool = False,
+    icm_only: bool = False,
+    icm_beta: float = 1.0,
 ) -> None:
     """Train *algo_name* on the environment specified in CONFIGS and save the
     trained model plus episode logs to ``results/<algo_name>/``.
 
     Args:
-        algo_name: One of DQN | PPO | A2C | SAC | DDPG | TD3.
+        algo_name: One of DQN | PPO | A2C | SAC | DDPG | TD3 | PPO_ICM.
         timesteps:  Override the default number of training timesteps.
         seed:       Random seed for reproducibility.
         wrapper:    Whether to apply the custom reward wrapper.
         terminal_reward: Use terminal reward only instead of dense shaping.
         shaping_scale: Scale applied to the dense shaping term.
+        icm:        Whether to apply the ICM curiosity wrapper (PPO_ICM only).
+        icm_only:   If True, suppress extrinsic reward (pure curiosity).
+        icm_beta:   Weight on intrinsic reward in additive mode.
     """
     if algo_name not in CONFIGS:
         raise ValueError(
@@ -79,13 +91,17 @@ def train(
         )
     if terminal_reward and not wrapper:
         raise ValueError("--terminal_reward requires --wrapper.")
+    if icm and algo_name != "PPO_ICM":
+        raise ValueError("--icm requires --algo PPO_ICM.")
+    if icm_only and not icm:
+        raise ValueError("--icm_only requires --icm.")
 
     config = CONFIGS[algo_name]
     env_id = config["env"]
     hyperparams = config["hyperparams"].copy()
     policy = hyperparams.pop("policy")
     n_timesteps = timesteps if timesteps is not None else config["timesteps"]
-    run_variant = _run_variant_name(wrapper, terminal_reward, shaping_scale)
+    run_variant = _run_variant_name(wrapper, terminal_reward, shaping_scale, icm, icm_only)
 
     # ── directory setup ──────────────────────────────────────────────
     log_dir, model_dir = _result_dirs(algo_name, run_variant)
@@ -102,6 +118,10 @@ def train(
         print(f"  Wrapper   : enabled")
         print(f"  TermOnly  : {terminal_reward}")
         print(f"  Scale     : {shaping_scale}")
+    if icm:
+        print(f"  ICM       : enabled")
+        print(f"  ICM only  : {icm_only}")
+        print(f"  ICM beta  : {icm_beta}")
     print(f"{'=' * 60}\n")
 
     # ── environments ─────────────────────────────────────────────────
@@ -109,7 +129,21 @@ def train(
     train_base_env = gym.make(env_id)
     eval_base_env = gym.make(env_id)
 
-    if wrapper:
+    if icm:
+        icm_cfg = CONFIGS[algo_name].get("icm", {})
+        train_base_env = icm_wrapper(
+            train_base_env,
+            icm_only=icm_only,
+            icm_beta=icm_beta,
+            **icm_cfg,
+        )
+        eval_base_env = icm_wrapper(
+            eval_base_env,
+            icm_only=icm_only,
+            icm_beta=icm_beta,
+            **icm_cfg,
+        )
+    elif wrapper:
         effective_scale = 0.0 if terminal_reward else shaping_scale
         train_base_env = reward_shaping_wrapper(
             train_base_env,
@@ -200,6 +234,22 @@ if __name__ == "__main__":
         default=0.05,
         help="Scale for dense reward shaping (default: 0.05).",
     )
+    parser.add_argument(
+        "--icm",
+        action="store_true",
+        help="Apply ICM curiosity wrapper (requires --algo PPO_ICM).",
+    )
+    parser.add_argument(
+        "--icm_only",
+        action="store_true",
+        help="Suppress extrinsic reward; use intrinsic reward only.",
+    )
+    parser.add_argument(
+        "--icm_beta",
+        type=float,
+        default=1.0,
+        help="Weight on intrinsic reward in additive mode (default: 1.0).",
+    )
     args = parser.parse_args()
     train(
         args.algo,
@@ -208,4 +258,7 @@ if __name__ == "__main__":
         wrapper=args.wrapper,
         terminal_reward=args.terminal_reward,
         shaping_scale=args.shaping_scale,
+        icm=args.icm,
+        icm_only=args.icm_only,
+        icm_beta=args.icm_beta,
     )
