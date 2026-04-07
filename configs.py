@@ -39,17 +39,20 @@ CONFIGS = {
     # Proximal Policy Optimization  (discrete actions)
     # ------------------------------------------------------------------
     "PPO": {
-        "env": "LunarLander-v3",
+        "env": "LunarLanderContinuous-v3",
         "timesteps": 1_000_000,
         "hyperparams": {
             "policy": "MlpPolicy",
             "learning_rate": 3e-4,
-            "n_steps": 1024,
+            "n_steps": 2048,
             "batch_size": 64,
-            "n_epochs": 4,
+            "n_epochs": 10,
             "gamma": 0.999,
             "gae_lambda": 0.98,
-            "ent_coef": 0.01,
+            "ent_coef": 0.0,
+            "clip_range": 0.2,
+            "vf_coef": 0.5,
+            "max_grad_norm": 0.5,
         },
     },
     # ------------------------------------------------------------------
