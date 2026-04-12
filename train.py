@@ -11,6 +11,7 @@ import os
 import argparse
 
 import gymnasium as gym
+import torch
 from stable_baselines3 import DQN, PPO, A2C, SAC, DDPG, TD3
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
@@ -55,6 +56,25 @@ def _result_dirs(algo_name: str, run_variant: str) -> tuple[str, str]:
     return os.path.join(base_dir, "logs"), os.path.join(base_dir, "models")
 
 
+def _resolve_device(requested_device: str) -> str:
+    requested = requested_device.lower()
+    if requested not in {"auto", "cpu", "cuda"}:
+        raise ValueError("--device must be one of: auto, cpu, cuda")
+
+    if requested == "cpu":
+        return "cpu"
+
+    if requested == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "--device cuda requested, but CUDA is not available. "
+                "Use --device cpu or --device auto."
+            )
+        return "cuda"
+
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
 def train(
     algo_name: str,
     timesteps: int | None = None,
@@ -64,6 +84,7 @@ def train(
     icm: bool = False,
     icm_only: bool = False,
     icm_beta: float = 1.0,
+    device: str = "auto",
 ) -> None:
     """Train *algo_name* on the environment specified in CONFIGS and save the
     trained model plus episode logs to ``results/<algo_name>/``.
@@ -77,6 +98,7 @@ def train(
         icm:        Whether to apply the ICM curiosity wrapper (PPO_ICM only).
         icm_only:   If True, suppress extrinsic reward (pure curiosity).
         icm_beta:   Weight on intrinsic reward in additive mode.
+        device:     Device selection: auto | cpu | cuda.
     """
     if algo_name not in CONFIGS:
         raise ValueError(
@@ -96,6 +118,7 @@ def train(
     policy = hyperparams.pop("policy")
     n_timesteps = timesteps if timesteps is not None else config["timesteps"]
     run_variant = _run_variant_name(wrapper, terminal_reward, icm, icm_only)
+    resolved_device = _resolve_device(device)
 
     # ── directory setup ──────────────────────────────────────────────
     log_dir, model_dir = _result_dirs(algo_name, run_variant)
@@ -108,6 +131,11 @@ def train(
     print(f"  Timesteps : {n_timesteps:,}")
     print(f"  Seed      : {seed}")
     print(f"  Variant   : {run_variant}")
+    print(f"  Device    : requested={device} resolved={resolved_device}")
+    print(f"  Torch     : {torch.__version__} (CUDA build: {torch.version.cuda})")
+    print(f"  CUDA      : available={torch.cuda.is_available()} count={torch.cuda.device_count()}")
+    if resolved_device == "cuda" and torch.cuda.is_available():
+        print(f"  GPU       : {torch.cuda.get_device_name(0)}")
     if wrapper:
         print(f"  Wrapper   : enabled")
         print(f"  TermOnly  : {terminal_reward}")
@@ -148,7 +176,14 @@ def train(
 
     # ── model ────────────────────────────────────────────────────────
     AlgoClass = ALGORITHMS[algo_name]
-    model = AlgoClass(policy, train_env, seed=seed, verbose=1, **hyperparams)
+    model = AlgoClass(
+        policy,
+        train_env,
+        seed=seed,
+        verbose=1,
+        device=resolved_device,
+        **hyperparams,
+    )
 
     # ── callbacks ────────────────────────────────────────────────────
     eval_callback = EvalCallback(
@@ -233,6 +268,13 @@ if __name__ == "__main__":
         default=1.0,
         help="Weight on intrinsic reward in additive mode (default: 1.0).",
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        choices=["auto", "cpu", "cuda"],
+        help="Training device: auto (default), cpu, or cuda.",
+    )
     args = parser.parse_args()
     train(
         args.algo,
@@ -243,4 +285,5 @@ if __name__ == "__main__":
         icm=args.icm,
         icm_only=args.icm_only,
         icm_beta=args.icm_beta,
+        device=args.device,
     )
