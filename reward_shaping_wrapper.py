@@ -3,52 +3,98 @@ import numpy as np
 
 
 class RewardShapingWrapper(gym.Wrapper):
-    """Gym wrapper that applies terminal reward with or without dense shaping."""
+    """
+    Wrapper that replaces the environment reward with a terminal signal.
 
-    def __init__(self, env: gym.Env, shaping_scale: float = 0.05):
+    LunarLander observation:
+        obs[0] x position  
+        obs[1] y position
+        obs[2] x velocity
+        obs[3] y velocity    
+        obs[4] angle          
+        obs[5] angular velocity
+        obs[6] left leg contact  
+        obs[7] right leg contact 
+
+    At episode end:
+
+        +30   proximity to pad   
+        +15   left  leg contact
+        +15   right leg contact
+        -30   tilt penalty         — proportional to |angle|/π
+        +20   low final speed      — scales from 0 (speed≥1) to 20 (speed=0)
+        +10   soft vertical touch  — scales from 0 (|vy|≥1) to 10 (vy=0)
+        -10   angular velocity     — proportional to min(|ω|, 1)
+        -20   horizontal drift     — proportional to min(|vx|, 1) at landing
+        +100  safe landing bonus   — terminated + both legs on ground
+        -100  crash penalty        — terminated + no legs (hit body or side)
+        -50   timeout penalty      — truncated without landing
+    """
+
+    def __init__(self, env: gym.Env):
         super().__init__(env)
-        self.shaping_scale = shaping_scale
-        self._episode_reward = 0.0
 
     def reset(self, **kwargs):
-        self._episode_reward = 0.0
-        obs, info = self.env.reset(**kwargs)
-        return obs, info
+        return self.env.reset(**kwargs)
 
-    def step(self, action):
-        obs, original_reward, terminated, truncated, info = self.env.step(action)
-        self._episode_reward += float(original_reward)
+    def _terminal_reward(self, obs, terminated: bool, truncated: bool) -> float:
+        x_pos      = float(obs[0])
+        vx         = float(obs[2])
+        vy         = float(obs[3])
+        angle      = float(obs[4])
+        angular_v  = float(obs[5])
+        left_leg   = obs[6] > 0.5
+        right_leg  = obs[7] > 0.5
 
-        done = terminated or truncated
         reward = 0.0
 
-        if done:
-            if self._episode_reward >= 200.0:
-                reward = 100.0
+        # Proximity to landing pad (x=0 is the centre)
+        reward += 30.0 * max(0.0, 1.0 - abs(x_pos))
+
+        # Leg contact
+        if left_leg:
+            reward += 15.0
+        if right_leg:
+            reward += 15.0
+
+        # Tilt penalty
+        reward -= 30.0 * min(abs(angle), np.pi) / np.pi
+
+        # Low total speed reward
+        speed = np.sqrt(vx ** 2 + vy ** 2)
+        reward += 20.0 * max(0.0, 1.0 - speed)
+
+        # Soft vertical touchdown
+        reward += 10.0 * max(0.0, 1.0 - abs(vy))
+
+        # Angular velocity penalty
+        reward -= 10.0 * min(abs(angular_v), 1.0)
+
+        # Horizontal drift penalty at landing
+        reward -= 20.0 * min(abs(vx), 1.0)
+
+        if terminated:
+            if left_leg and right_leg:
+                reward += 100.0   
             else:
-                reward = -100.0
-            self._episode_reward = 0.0
+                reward -= 100.0   # Crash
+        elif truncated:
+            reward -= 50.0        # ran out of time
 
-        x, y, vx, vy, angle, _angular_vel, left_leg, right_leg = obs
+        return reward
 
-        distance_weight = 0.5
-        vel_weight = 0.2
-        angle_weight = 0.2
-        leg_weight = 10
+    def step(self, action):
+        obs, _, terminated, truncated, info = self.env.step(action)
 
-        d = distance_weight * np.sqrt(x**2 + y**2)
-        v_pen = vel_weight * np.sqrt(vx**2 + vy**2)
-        theta = angle_weight * abs(angle)
+        done = terminated or truncated
 
-        shaping = -(d + v_pen + theta)
-
-        # Legs are worth more since they are crucial for landing
-        shaping += leg_weight * (left_leg + right_leg)
-
-        reward += self.shaping_scale * shaping
+        if done:
+            reward = self._terminal_reward(obs, terminated, truncated)
+        else:
+            reward = 0.0
 
         return obs, reward, terminated, truncated, info
 
 
-def reward_shaping_wrapper(env: gym.Env, shaping_scale: float = 0.05) -> gym.Wrapper:
-    return RewardShapingWrapper(env, shaping_scale=shaping_scale)
+def reward_shaping_wrapper(env: gym.Env) -> gym.Wrapper:
+    return RewardShapingWrapper(env)
