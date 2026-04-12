@@ -31,21 +31,15 @@ from configs import CONFIGS
 _PALETTE = ["#E63946", "#457B9D", "#2A9D8F", "#E9C46A", "#F4A261", "#6A4C93"]
 
 
-def _format_scale(scale: float) -> str:
-    formatted = f"{scale:.3f}".rstrip("0").rstrip(".")
-    return formatted.replace(".", "p")
-
-
 def _run_variant_name(
     wrapper: bool,
     terminal_reward: bool,
-    shaping_scale: float,
 ) -> str:
     if not wrapper:
         return "baseline"
     if terminal_reward:
         return "wrapped_terminal_reward"
-    return f"wrapped_reward_shaping_s{_format_scale(shaping_scale)}"
+    return "wrapped_reward_shaping"
 
 
 def _parse_run_spec(spec: str) -> tuple[str, str]:

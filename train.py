@@ -30,15 +30,9 @@ ALGORITHMS = {
 }
 
 
-def _format_scale(scale: float) -> str:
-    formatted = f"{scale:.3f}".rstrip("0").rstrip(".")
-    return formatted.replace(".", "p")
-
-
 def _run_variant_name(
     wrapper: bool,
     terminal_reward: bool,
-    shaping_scale: float,
     icm: bool = False,
     icm_only: bool = False,
 ) -> str:
@@ -50,7 +44,7 @@ def _run_variant_name(
         return "baseline"
     if terminal_reward:
         return "wrapped_terminal_reward"
-    return f"wrapped_reward_shaping_s{_format_scale(shaping_scale)}"
+    return "wrapped_reward_shaping"
 
 
 def _result_dirs(algo_name: str, run_variant: str) -> tuple[str, str]:
@@ -67,7 +61,6 @@ def train(
     seed: int = 42,
     wrapper: bool = False,
     terminal_reward: bool = False,
-    shaping_scale: float = 0.05,
     icm: bool = False,
     icm_only: bool = False,
     icm_beta: float = 1.0,
@@ -81,7 +74,6 @@ def train(
         seed:       Random seed for reproducibility.
         wrapper:    Whether to apply the custom reward wrapper.
         terminal_reward: Use terminal reward only instead of dense shaping.
-        shaping_scale: Scale applied to the dense shaping term.
         icm:        Whether to apply the ICM curiosity wrapper (PPO_ICM only).
         icm_only:   If True, suppress extrinsic reward (pure curiosity).
         icm_beta:   Weight on intrinsic reward in additive mode.
@@ -103,7 +95,7 @@ def train(
     hyperparams = config["hyperparams"].copy()
     policy = hyperparams.pop("policy")
     n_timesteps = timesteps if timesteps is not None else config["timesteps"]
-    run_variant = _run_variant_name(wrapper, terminal_reward, shaping_scale, icm, icm_only)
+    run_variant = _run_variant_name(wrapper, terminal_reward, icm, icm_only)
 
     # ── directory setup ──────────────────────────────────────────────
     log_dir, model_dir = _result_dirs(algo_name, run_variant)
@@ -119,7 +111,6 @@ def train(
     if wrapper:
         print(f"  Wrapper   : enabled")
         print(f"  TermOnly  : {terminal_reward}")
-        print(f"  Scale     : {shaping_scale}")
     if icm:
         print(f"  ICM       : enabled")
         print(f"  ICM only  : {icm_only}")
@@ -133,8 +124,8 @@ def train(
 
     if icm:
         if wrapper and terminal_reward:
-            train_base_env = reward_shaping_wrapper(train_base_env, shaping_scale=0.0)
-            eval_base_env = reward_shaping_wrapper(eval_base_env, shaping_scale=0.0)
+            train_base_env = reward_shaping_wrapper(train_base_env)
+            eval_base_env = reward_shaping_wrapper(eval_base_env)
         icm_cfg = CONFIGS[algo_name].get("icm", {})
         train_base_env = icm_wrapper(
             train_base_env,
@@ -149,15 +140,8 @@ def train(
             **icm_cfg,
         )
     elif wrapper:
-        effective_scale = 0.0 if terminal_reward else shaping_scale
-        train_base_env = reward_shaping_wrapper(
-            train_base_env,
-            shaping_scale=effective_scale,
-        )
-        eval_base_env = reward_shaping_wrapper(
-            eval_base_env,
-            shaping_scale=effective_scale,
-        )
+        train_base_env = reward_shaping_wrapper(train_base_env)
+        eval_base_env = reward_shaping_wrapper(eval_base_env)
 
     train_env = Monitor(train_base_env, log_dir)
     eval_env = Monitor(eval_base_env)
@@ -234,12 +218,6 @@ if __name__ == "__main__":
         help="Use terminal reward only with the wrapper.",
     )
     parser.add_argument(
-        "--shaping_scale",
-        type=float,
-        default=0.05,
-        help="Scale for dense reward shaping (default: 0.05).",
-    )
-    parser.add_argument(
         "--icm",
         action="store_true",
         help="Apply ICM curiosity wrapper (requires --algo PPO_ICM).",
@@ -262,7 +240,6 @@ if __name__ == "__main__":
         seed=args.seed,
         wrapper=args.wrapper,
         terminal_reward=args.terminal_reward,
-        shaping_scale=args.shaping_scale,
         icm=args.icm,
         icm_only=args.icm_only,
         icm_beta=args.icm_beta,

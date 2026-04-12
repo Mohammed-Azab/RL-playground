@@ -7,7 +7,6 @@ Usage:
     python train_all.py --timesteps 200000       # quick smoke-test
     python train_all.py --seed 0
     python train_all.py --algos SAC --wrapper --terminal_reward
-    python train_all.py --algos SAC --wrapper --shaping_scale 0.05
 """
 
 import argparse
@@ -51,12 +50,6 @@ def main() -> None:
         help="Use terminal reward only with the wrapper.",
     )
     parser.add_argument(
-        "--shaping_scale",
-        type=float,
-        default=0.05,
-        help="Scale for dense reward shaping (default: 0.05).",
-    )
-    parser.add_argument(
         "--icm",
         action="store_true",
         help="Apply ICM curiosity wrapper (requires --algos PPO_ICM).",
@@ -89,7 +82,6 @@ def main() -> None:
                 seed=args.seed,
                 wrapper=args.wrapper,
                 terminal_reward=args.terminal_reward,
-                shaping_scale=args.shaping_scale,
                 icm=args.icm,
                 icm_only=args.icm_only,
                 icm_beta=args.icm_beta,

@@ -20,15 +20,9 @@ from icm import icm_wrapper
 from train import ALGORITHMS
 
 
-def _format_scale(scale: float) -> str:
-    formatted = f"{scale:.3f}".rstrip("0").rstrip(".")
-    return formatted.replace(".", "p")
-
-
 def _run_variant_name(
     wrapper: bool,
     terminal_reward: bool,
-    shaping_scale: float,
     icm: bool = False,
     icm_only: bool = False,
 ) -> str:
@@ -40,18 +34,17 @@ def _run_variant_name(
         return "baseline"
     if terminal_reward:
         return "wrapped_terminal_reward"
-    return f"wrapped_reward_shaping_s{_format_scale(shaping_scale)}"
+    return "wrapped_reward_shaping"
 
 
 def _default_model_base(
     algo_name: str,
     wrapper: bool,
     terminal_reward: bool,
-    shaping_scale: float,
     icm: bool = False,
     icm_only: bool = False,
 ) -> str:
-    run_variant = _run_variant_name(wrapper, terminal_reward, shaping_scale, icm, icm_only)
+    run_variant = _run_variant_name(wrapper, terminal_reward, icm, icm_only)
     if run_variant == "baseline":
         return os.path.join("results", algo_name)
     return os.path.join("results", algo_name, run_variant)
@@ -64,7 +57,6 @@ def evaluate(
     render: bool = False,
     wrapper: bool = False,
     terminal_reward: bool = False,
-    shaping_scale: float = 0.05,
     icm: bool = False,
     icm_only: bool = False,
     icm_beta: float = 1.0,
@@ -96,7 +88,6 @@ def evaluate(
             algo_name,
             wrapper=wrapper,
             terminal_reward=terminal_reward,
-            shaping_scale=shaping_scale,
             icm=icm,
             icm_only=icm_only,
         )
@@ -121,7 +112,7 @@ def evaluate(
 
     if icm:
         if wrapper and terminal_reward:
-            env = reward_shaping_wrapper(env, shaping_scale=0.0)
+            env = reward_shaping_wrapper(env)
         icm_cfg = CONFIGS[algo_name].get("icm", {})
         env = icm_wrapper(
             env,
@@ -130,10 +121,7 @@ def evaluate(
             **icm_cfg,
         )
     elif wrapper:
-        if terminal_reward:
-            print("Applying reward shaping wrapper with terminal reward only.")
-            shaping_scale = 0.0  # Disable dense shaping
-        env = reward_shaping_wrapper(env, shaping_scale=shaping_scale)
+        env = reward_shaping_wrapper(env)
 
     episode_rewards: list[float] = []
     episode_lengths: list[int] = []
@@ -197,12 +185,6 @@ if __name__ == "__main__":
         help="Number of evaluation episodes (default: 10).",
     )
     parser.add_argument(
-        "--shaping_scale",
-        type=float,
-        default=0.05,
-        help="Scale for reward shaping (default: 0.05).",
-    )
-    parser.add_argument(
         "--render",
         action="store_true",
         help="Render the environment (requires a display).",
@@ -241,7 +223,6 @@ if __name__ == "__main__":
         render=args.render,
         wrapper=args.wrapper,
         terminal_reward=args.terminal_reward,
-        shaping_scale=args.shaping_scale,
         icm=args.icm,
         icm_only=args.icm_only,
         icm_beta=args.icm_beta,

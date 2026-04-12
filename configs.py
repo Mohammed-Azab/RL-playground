@@ -36,7 +36,7 @@ CONFIGS = {
         },
     },
     # ------------------------------------------------------------------
-    # Proximal Policy Optimization  (discrete actions)
+    # Proximal Policy Optimization
     # ------------------------------------------------------------------
     "PPO": {
         "env": "LunarLanderContinuous-v3",
@@ -124,11 +124,11 @@ CONFIGS = {
         },
     },
     # ------------------------------------------------------------------
-    # PPO + Intrinsic Curiosity Module  (discrete actions)
+    # PPO + Intrinsic Curiosity Module  (continuous actions)
     # ------------------------------------------------------------------
     "PPO_ICM": {
         "env": "LunarLanderContinuous-v3",
-        "timesteps": 1_000_000,
+        "timesteps": 500_000,
         "hyperparams": {
             "policy": "MlpPolicy",
             "learning_rate": 3e-4,
@@ -146,7 +146,7 @@ CONFIGS = {
             "feature_dim": 64,
             "lr": 1e-3,
             "eta": 0.01,
-            "beta": 0.2,
+            "beta": 0.5,
             "update_freq": 128,
             "buffer_capacity": 1000,
             "batch_size": 64,
