@@ -14,6 +14,7 @@ After tuning:
 
 import argparse
 import os
+import random
 
 import gymnasium as gym
 import numpy as np
@@ -136,6 +137,7 @@ def _make_env(
     wrapper: bool,
     terminal_reward: bool,
     icm_cfg: dict | None,
+    seed: int,
 ) -> Monitor:
     env_id = CONFIGS[algo_name]["env"]
     env = gym.make(env_id)
@@ -143,7 +145,23 @@ def _make_env(
         env = reward_shaping_wrapper(env)
     if icm_cfg:
         env = icm_wrapper(env, **icm_cfg)
-    return Monitor(env)
+    env = Monitor(env)
+    env.reset(seed=seed)
+    return env
+
+
+def _aggregate_eval_scores(
+    scores: list[float],
+    mode: str,
+    last_k: int,
+) -> float:
+    if mode == "best":
+        return float(np.max(scores))
+    if mode == "final":
+        return float(scores[-1])
+
+    k = min(last_k, len(scores))
+    return float(np.mean(scores[-k:]))
 
 
 # ── objective ─────────────────────────────────────────────────────────────────
@@ -154,37 +172,57 @@ def _objective(
     n_timesteps: int,
     wrapper: bool,
     terminal_reward: bool,
+    n_checkpoints: int,
+    eval_episodes: int,
+    objective_mode: str,
+    objective_last_k: int,
+    seed: int,
 ) -> float:
     sampler_fn = _SAMPLERS[algo_name]
     params = sampler_fn(trial)
     icm_cfg = _sample_icm(trial) if algo_name == "PPO_ICM" else None
 
-    train_env = _make_env(algo_name, wrapper, terminal_reward, icm_cfg)
-    eval_env  = _make_env(algo_name, wrapper, terminal_reward, icm_cfg)
+    trial_seed = seed + trial.number
+    random.seed(trial_seed)
+    np.random.seed(trial_seed)
+
+    train_env = _make_env(algo_name, wrapper, terminal_reward, icm_cfg, trial_seed)
+    eval_env  = _make_env(algo_name, wrapper, terminal_reward, icm_cfg, trial_seed + 10_000)
 
     AlgoClass = ALGORITHMS[algo_name]
-    model = AlgoClass("MlpPolicy", train_env, verbose=0, **params)
+    model = AlgoClass("MlpPolicy", train_env, seed=trial_seed, verbose=0, **params)
 
-    # Evaluate 5 times throughout training and prune bad trials early
-    n_checkpoints = 5
-    interval      = n_timesteps // n_checkpoints
-    best_mean     = -np.inf
+    # Evaluate throughout training and prune bad trials early.
+    # The optimization target defaults to a stable aggregate, not a lucky spike.
+    interval = max(1, n_timesteps // max(1, n_checkpoints))
+    eval_scores: list[float] = []
 
     for checkpoint in range(n_checkpoints):
         model.learn(interval, reset_num_timesteps=(checkpoint == 0))
         mean_reward, _ = evaluate_policy(
-            model, eval_env, n_eval_episodes=5, deterministic=True, warn=False
+            model,
+            eval_env,
+            n_eval_episodes=eval_episodes,
+            deterministic=True,
+            warn=False,
         )
+        eval_scores.append(float(mean_reward))
         trial.report(mean_reward, checkpoint)
-        best_mean = max(best_mean, mean_reward)
         if trial.should_prune():
             train_env.close()
             eval_env.close()
             raise optuna.exceptions.TrialPruned()
 
+    objective_value = _aggregate_eval_scores(
+        eval_scores,
+        mode=objective_mode,
+        last_k=objective_last_k,
+    )
+    trial.set_user_attr("eval_scores", eval_scores)
+
     train_env.close()
     eval_env.close()
-    return best_mean
+    return objective_value
 
 
 # ── visualisation ─────────────────────────────────────────────────────────────
@@ -269,12 +307,43 @@ def main() -> None:
         "--seed",
         type=int,
         default=42,
-        help="Random seed for the Optuna TPE sampler (default: 42).",
+        help="Base random seed for sampler + training/eval trials (default: 42).",
+    )
+    parser.add_argument(
+        "--n_checkpoints",
+        type=int,
+        default=5,
+        help="Number of training checkpoints per trial (default: 5).",
+    )
+    parser.add_argument(
+        "--eval_episodes",
+        type=int,
+        default=10,
+        help="Evaluation episodes per checkpoint (default: 10).",
+    )
+    parser.add_argument(
+        "--objective_mode",
+        type=str,
+        default="last_mean",
+        choices=["last_mean", "final", "best"],
+        help="How trial score is computed from checkpoint evals (default: last_mean).",
+    )
+    parser.add_argument(
+        "--objective_last_k",
+        type=int,
+        default=3,
+        help="How many trailing checkpoints to average when objective_mode=last_mean (default: 3).",
     )
     args = parser.parse_args()
 
     if args.terminal_reward and not args.wrapper:
         parser.error("--terminal_reward requires --wrapper.")
+    if args.n_checkpoints < 1:
+        parser.error("--n_checkpoints must be >= 1.")
+    if args.eval_episodes < 1:
+        parser.error("--eval_episodes must be >= 1.")
+    if args.objective_last_k < 1:
+        parser.error("--objective_last_k must be >= 1.")
 
     study_name = args.study_name or f"{args.algo}_tuning"
     storage    = f"sqlite:///{study_name}.db"
@@ -295,6 +364,9 @@ def main() -> None:
     print(f"DB    : {storage}")
     print(f"Algo  : {args.algo}")
     print(f"Trials: {args.n_trials}  |  Steps/trial: {args.timesteps:,}")
+    print(f"Eval  : checkpoints={args.n_checkpoints}  episodes={args.eval_episodes}")
+    print(f"Score : mode={args.objective_mode}  last_k={args.objective_last_k}")
+    print(f"Seed  : base={args.seed}")
     print(f"\nLive dashboard (run in a separate terminal):")
     print(f"  optuna-dashboard {storage}\n")
 
@@ -305,6 +377,11 @@ def main() -> None:
             args.timesteps,
             args.wrapper,
             args.terminal_reward,
+            args.n_checkpoints,
+            args.eval_episodes,
+            args.objective_mode,
+            args.objective_last_k,
+            args.seed,
         ),
         n_trials=args.n_trials,
         n_jobs=1,
