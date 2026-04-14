@@ -7,3 +7,7 @@ torch>=2.0.0
 setuptools<81
 box2d-py==2.3.5
 pygame-ce>=2.5.7
+optuna
+optuna-dashboard
+plotly
+kaleido
