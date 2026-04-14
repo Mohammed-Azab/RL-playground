@@ -8,6 +8,7 @@ Monitor wrapper (one per algorithm) from ``results/<ALGO>/logs/``.
 Usage:
     python compare.py                         # compare all trained algos
     python compare.py --algos DQN PPO A2C     # subset
+    python compare.py --algo PPO:wrapped_terminal_reward PPO_ICM:wrapped_icm_terminal
     python compare.py --runs DQN DQN:wrapped_terminal_reward SAC:wrapped_reward_shaping_s0p05
     python compare.py --window 20             # smoothing window (episodes)
     python compare.py --output my_plot.png    # custom output filename
@@ -270,6 +271,15 @@ if __name__ == "__main__":
         description="Compare trained LunarLander agents."
     )
     parser.add_argument(
+        "--algo",
+        nargs="+",
+        default=None,
+        help=(
+            "Backward-compatible alias for --runs. Accepts ALGO or ALGO:VARIANT. "
+            "Example: PPO:wrapped_terminal_reward PPO_ICM:wrapped_icm_terminal"
+        ),
+    )
+    parser.add_argument(
         "--algos",
         nargs="+",
         default=None,
@@ -313,9 +323,15 @@ if __name__ == "__main__":
         help="Display the plot interactively instead of saving it.",
     )
     args = parser.parse_args()
+
+    if args.algo is not None and args.runs is not None:
+        parser.error("Use either --algo or --runs, not both.")
+
+    effective_runs = args.runs if args.runs is not None else args.algo
+
     compare(
         algos=args.algos,
-        runs=args.runs,
+        runs=effective_runs,
         window=args.window,
         output=args.output,
         no_save=args.no_save,
