@@ -43,16 +43,16 @@ CONFIGS = {
         "timesteps": 1_000_000,
         "hyperparams": {
             "policy": "MlpPolicy",
-            "learning_rate": 3e-4,
+            "learning_rate": 1e-3,
             "n_steps": 2048,
             "batch_size": 64,
             "n_epochs": 10,
-            "gamma": 0.999,
-            "gae_lambda": 0.98,
-            "ent_coef": 0.0,
-            "clip_range": 0.2,
-            "vf_coef": 0.5,
-            "max_grad_norm": 0.5,
+            "gamma": 0.9884554601066186,
+            "gae_lambda": 0.9939498941564189,
+            "ent_coef": 0.008948273504276488,
+            "clip_range": 0.2793699936433256,
+            "vf_coef": 0.9414056762673376,
+            "max_grad_norm": 0.36194475143634364,
         },
     },
     # ------------------------------------------------------------------
@@ -128,7 +128,7 @@ CONFIGS = {
     # ------------------------------------------------------------------
     "PPO_ICM": {
         "env": "LunarLanderContinuous-v3",
-        "timesteps": 500_000,
+        "timesteps": 1_000_000,
         "hyperparams": {
             "policy": "MlpPolicy",
             "learning_rate": 3e-4,
@@ -144,12 +144,15 @@ CONFIGS = {
         },
         "icm": {
             "feature_dim": 64,
-            "lr": 1e-3,
+            "lr": 1e-2,
             "eta": 0.01,
             "beta": 0.5,
-            "update_freq": 128,
+            "update_freq": 256,
             "buffer_capacity": 1000,
             "batch_size": 64,
         },
     },
 }
+
+#a bad learning rate can cause the agent to learn too slowly in a closed loop or diverge.
+# while a bad n_steps can affect the stability and efficiency of learning.
