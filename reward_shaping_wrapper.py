@@ -28,7 +28,9 @@ class RewardShapingWrapper(gym.Wrapper):
         -20   horizontal drift     — proportional to min(|vx|, 1) at landing
         +100  safe landing bonus   — terminated + both legs on ground
         -100  crash penalty        — terminated + no legs (hit body or side)
-        -50   timeout penalty      — truncated without landing
+        -50   base timeout penalty — truncated without landing
+        -x    timeout state penalty— more penalty for far/fast/tilted timeout
+        -x    touchdown motion     — penalty if leg contact occurs while still moving fast
     """
 
     def __init__(self, env: gym.Env):
@@ -65,7 +67,7 @@ class RewardShapingWrapper(gym.Wrapper):
         reward += 20.0 * max(0.0, 1.0 - speed)
 
         # Soft vertical touchdown
-        reward += 10.0 * max(0.0, 1.0 - abs(vy))
+        reward += 30.0 * max(0.0, 1.0 - abs(vy))
 
         # Angular velocity penalty
         reward -= 10.0 * min(abs(angular_v), 1.0)
@@ -73,13 +75,28 @@ class RewardShapingWrapper(gym.Wrapper):
         # Horizontal drift penalty at landing
         reward -= 20.0 * min(abs(vx), 1.0)
 
+        # Penalize touching down with too much residual motion.
+        # This discourages sliding/spinning.
+        touched_ground = left_leg or right_leg
+        if touched_ground:
+            speed_excess = max(0.0, speed - 0.25)
+            ang_vel_excess = max(0.0, abs(angular_v) - 0.20)
+            reward -= 40.0 * min(speed_excess, 1.5)
+            reward -= 25.0 * min(ang_vel_excess, 1.5)
+
         if terminated:
             if left_leg and right_leg:
                 reward += 100.0   
             else:
                 reward -= 100.0   # Crash
         elif truncated:
-            reward -= 50.0        # ran out of time
+            # Base timeout cost + state-dependent cost to punish unstable/unfinished states.
+            timeout_state_penalty = (
+                30.0 * min(abs(x_pos), 1.5)
+                + 30.0 * min(speed, 1.5)
+                + 20.0 * min(abs(angle), 1.0)
+            )
+            reward -= 50.0 + timeout_state_penalty
 
         return reward
 
