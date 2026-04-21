@@ -214,3 +214,8 @@ __marimo__/
 
 
 *.md
+!hyperparameter_tuning.md
+
+tensorboard_logs/
+
+*.db
