@@ -43,11 +43,11 @@ def _default_model_base(
     terminal_reward: bool,
     icm: bool = False,
     icm_only: bool = False,
+    seed: int = 42,
 ) -> str:
     run_variant = _run_variant_name(wrapper, terminal_reward, icm, icm_only)
-    if run_variant == "baseline":
-        return os.path.join("results", algo_name)
-    return os.path.join("results", algo_name, run_variant)
+    folder = f"{run_variant}_s{seed}"
+    return os.path.join("results", algo_name, folder)
 
 
 def evaluate(
@@ -60,6 +60,7 @@ def evaluate(
     icm: bool = False,
     icm_only: bool = False,
     icm_beta: float = 1.0,
+    seed: int = 42,
 ) -> dict[str, float]:
     """Load a trained model and evaluate it for *n_episodes* episodes.
 
@@ -90,6 +91,7 @@ def evaluate(
             terminal_reward=terminal_reward,
             icm=icm,
             icm_only=icm_only,
+            seed=seed,
         )
         best = os.path.join(base_dir, "models", "best_model")
         final = os.path.join(base_dir, "models", "final_model")
@@ -152,7 +154,7 @@ def evaluate(
         "mean_length": float(np.mean(episode_lengths)),
     }
 
-    print(f"\n── {algo_name} evaluation results ({n_episodes} episodes) ──")
+    print(f"\n── {algo_name} evaluation results (seed={seed}, {n_episodes} episodes) ──")
     print(f"  Mean reward : {stats['mean_reward']:.2f} ± {stats['std_reward']:.2f}")
     print(f"  Mean length : {stats['mean_length']:.1f} steps")
 
@@ -215,6 +217,12 @@ if __name__ == "__main__":
         default=1.0,
         help="Weight on intrinsic reward in additive mode (default: 1.0).",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Seed used during training — selects the matching result directory (default: 42).",
+    )
     args = parser.parse_args()
     evaluate(
         args.algo,
@@ -226,4 +234,5 @@ if __name__ == "__main__":
         icm=args.icm,
         icm_only=args.icm_only,
         icm_beta=args.icm_beta,
+        seed=args.seed,
     )

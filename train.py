@@ -19,6 +19,7 @@ from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 from configs import CONFIGS
 from reward_shaping_wrapper import reward_shaping_wrapper
 from icm import icm_wrapper
+from callbacks import ICMLoggingCallback
 
 ALGORITHMS = {
     "DQN": DQN,
@@ -48,11 +49,9 @@ def _run_variant_name(
     return "wrapped_reward_shaping"
 
 
-def _result_dirs(algo_name: str, run_variant: str) -> tuple[str, str]:
-    if run_variant == "baseline":
-        base_dir = os.path.join("results", algo_name)
-    else:
-        base_dir = os.path.join("results", algo_name, run_variant)
+def _result_dirs(algo_name: str, run_variant: str, seed: int) -> tuple[str, str]:
+    folder = f"{run_variant}_s{seed}"
+    base_dir = os.path.join("results", algo_name, folder)
     return os.path.join(base_dir, "logs"), os.path.join(base_dir, "models")
 
 
@@ -75,6 +74,12 @@ def _resolve_device(requested_device: str) -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+def _print_param_block(title: str, params: dict) -> None:
+    print(f"  {title}:")
+    for key in sorted(params):
+        print(f"    - {key}: {params[key]}")
+
+
 def train(
     algo_name: str,
     timesteps: int | None = None,
@@ -85,6 +90,7 @@ def train(
     icm_only: bool = False,
     icm_beta: float = 1.0,
     device: str = "auto",
+    tensorboard_log: str = "tensorboard_logs",
 ) -> None:
     """Train *algo_name* on the environment specified in CONFIGS and save the
     trained model plus episode logs to ``results/<algo_name>/``.
@@ -116,12 +122,13 @@ def train(
     env_id = config["env"]
     hyperparams = config["hyperparams"].copy()
     policy = hyperparams.pop("policy")
+    icm_cfg = CONFIGS[algo_name].get("icm", {}) if icm else {}
     n_timesteps = timesteps if timesteps is not None else config["timesteps"]
     run_variant = _run_variant_name(wrapper, terminal_reward, icm, icm_only)
     resolved_device = _resolve_device(device)
 
     # ── directory setup ──────────────────────────────────────────────
-    log_dir, model_dir = _result_dirs(algo_name, run_variant)
+    log_dir, model_dir = _result_dirs(algo_name, run_variant, seed)
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)
 
@@ -143,6 +150,10 @@ def train(
         print(f"  ICM       : enabled")
         print(f"  ICM only  : {icm_only}")
         print(f"  ICM beta  : {icm_beta}")
+    print(f"  Policy    : {policy}")
+    _print_param_block("Hyperparams", hyperparams)
+    if icm:
+        _print_param_block("ICM params", icm_cfg)
     print(f"{'=' * 60}\n")
 
     # ── environments ─────────────────────────────────────────────────
@@ -154,7 +165,6 @@ def train(
         if wrapper and terminal_reward:
             train_base_env = reward_shaping_wrapper(train_base_env)
             eval_base_env = reward_shaping_wrapper(eval_base_env)
-        icm_cfg = CONFIGS[algo_name].get("icm", {})
         train_base_env = icm_wrapper(
             train_base_env,
             icm_only=icm_only,
@@ -182,6 +192,7 @@ def train(
         seed=seed,
         verbose=1,
         device=resolved_device,
+        tensorboard_log=tensorboard_log,
         **hyperparams,
     )
 
@@ -200,11 +211,16 @@ def train(
         save_path=model_dir,
         name_prefix=algo_name.lower(),
     )
+    callbacks = [eval_callback, checkpoint_callback]
+    if icm:
+        callbacks.append(ICMLoggingCallback())
 
     # ── training ─────────────────────────────────────────────────────
+    tb_log_name = f"{algo_name}_{run_variant}_s{seed}"
     model.learn(
         total_timesteps=n_timesteps,
-        callback=[eval_callback, checkpoint_callback],
+        callback=callbacks,
+        tb_log_name=tb_log_name,
     )
 
     # ── save final model ─────────────────────────────────────────────
@@ -275,6 +291,12 @@ if __name__ == "__main__":
         choices=["auto", "cpu", "cuda"],
         help="Training device: auto (default), cpu, or cuda.",
     )
+    parser.add_argument(
+        "--tensorboard_log",
+        type=str,
+        default="tensorboard_logs",
+        help="Root directory for TensorBoard logs (default: tensorboard_logs).",
+    )
     args = parser.parse_args()
     train(
         args.algo,
@@ -286,4 +308,5 @@ if __name__ == "__main__":
         icm_only=args.icm_only,
         icm_beta=args.icm_beta,
         device=args.device,
+        tensorboard_log=args.tensorboard_log,
     )
