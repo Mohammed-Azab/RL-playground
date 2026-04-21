@@ -139,6 +139,14 @@ class ICMWrapper(gym.Wrapper):
         self._obs_prev: np.ndarray | None = None
         self._step_count: int = 0
 
+        # Stats exposed to TensorBoard callback
+        self.last_forward_loss: float = 0.0
+        self.last_inverse_loss: float = 0.0
+        self.last_icm_loss: float = 0.0
+        self.last_intrinsic_reward: float = 0.0
+        self._ep_intrinsic_reward: float = 0.0
+        self.last_ep_intrinsic_reward: float = 0.0
+
     # ------------------------------------------------------------------
     # Gymnasium API
     # ------------------------------------------------------------------
@@ -147,12 +155,16 @@ class ICMWrapper(gym.Wrapper):
         obs, info = self.env.reset(**kwargs)
         self._obs_prev = obs.copy()
         self._step_count = 0
+        self.last_ep_intrinsic_reward = self._ep_intrinsic_reward
+        self._ep_intrinsic_reward = 0.0
         return obs, info
 
     def step(self, action):
         obs_next, r_e, terminated, truncated, info = self.env.step(action)
 
         r_i = self._intrinsic_reward(self._obs_prev, action, obs_next)
+        self.last_intrinsic_reward = r_i
+        self._ep_intrinsic_reward += r_i
         self._buffer.append((self._obs_prev.copy(), np.array(action, dtype=np.float32), obs_next.copy()))
         self._step_count += 1
 
@@ -228,6 +240,10 @@ class ICMWrapper(gym.Wrapper):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+        self.last_forward_loss = l_fwd.item()
+        self.last_inverse_loss = l_inv.item()
+        self.last_icm_loss = loss.item()
 
 
 def icm_wrapper(
