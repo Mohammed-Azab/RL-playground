@@ -83,7 +83,7 @@ def evaluate(
 
     env_id = CONFIGS[algo_name]["env"]
 
-    # ── resolve model path ───────────────────────────────────────────
+    # Resolve model path
     if model_path is None:
         base_dir = _default_model_base(
             algo_name,
@@ -102,12 +102,12 @@ def evaluate(
             f"Run: python train.py --algo {algo_name}"
         )
 
-    # ── load model ───────────────────────────────────────────────────
+    # Load model
     AlgoClass = ALGORITHMS[algo_name]
     model = AlgoClass.load(model_path)
     print(f"Loaded {algo_name} from: {model_path}")
 
-    # ── evaluation loop ──────────────────────────────────────────────
+    # Evaluation loop
     render_mode = "human" if render else None
     
     env = gym.make(env_id, render_mode=render_mode)
@@ -154,14 +154,14 @@ def evaluate(
         "mean_length": float(np.mean(episode_lengths)),
     }
 
-    print(f"\n── {algo_name} evaluation results (seed={seed}, {n_episodes} episodes) ──")
+    print(f"\n{algo_name} evaluation results (seed={seed}, {n_episodes} episodes)")
     print(f"  Mean reward : {stats['mean_reward']:.2f} ± {stats['std_reward']:.2f}")
     print(f"  Mean length : {stats['mean_length']:.1f} steps")
 
     return stats
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# Main
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Evaluate a trained LunarLander agent."

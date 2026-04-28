@@ -120,7 +120,7 @@ def train(
     if icm_only and not icm:
         raise ValueError("--icm_only requires --icm.")
 
-    # ── seed RNGs for reproducibility ─────────────────────────────────
+    # Seed RNGs for reproducibility
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -139,7 +139,7 @@ def train(
     run_variant = _run_variant_name(wrapper, terminal_reward, icm, icm_only)
     resolved_device = _resolve_device(device)
 
-    # ── directory setup ──────────────────────────────────────────────
+    # Directory setup
     log_dir, model_dir = _result_dirs(algo_name, run_variant, seed)
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)
@@ -168,8 +168,8 @@ def train(
         _print_param_block("ICM params", icm_cfg)
     print(f"{'=' * 60}\n")
 
-    # ── environments ─────────────────────────────────────────────────
-    # Monitor wraps the env and records per-episode reward/length to CSV
+    # Environments
+    # Monitor records per-episode reward/length to CSV
     train_base_env = gym.make(env_id)
     eval_base_env = gym.make(env_id)
 
@@ -205,7 +205,7 @@ def train(
     train_env = Monitor(train_base_env, log_dir)
     eval_env = Monitor(eval_base_env)
 
-    # ── model ────────────────────────────────────────────────────────
+    # Model
     AlgoClass = ALGORITHMS[algo_name]
     model = AlgoClass(
         policy,
@@ -217,7 +217,7 @@ def train(
         **hyperparams,
     )
 
-    # ── callbacks ────────────────────────────────────────────────────
+    # Callbacks
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=model_dir,
@@ -236,7 +236,7 @@ def train(
     if icm:
         callbacks.append(ICMLoggingCallback())
 
-    # ── training ─────────────────────────────────────────────────────
+    # Training
     tb_log_name = f"{algo_name}_{run_variant}_s{seed}"
     model.learn(
         total_timesteps=n_timesteps,
@@ -244,7 +244,7 @@ def train(
         tb_log_name=tb_log_name,
     )
 
-    # ── save final model ─────────────────────────────────────────────
+    # Save final model
     final_path = os.path.join(model_dir, "final_model")
     model.save(final_path)
     print(f"\n✓ {algo_name} training complete.")
@@ -255,7 +255,7 @@ def train(
     eval_env.close()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# Main
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Train a single RL algorithm on LunarLander."
