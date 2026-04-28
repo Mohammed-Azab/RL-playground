@@ -129,7 +129,7 @@ def evaluate(
     episode_lengths: list[int] = []
 
     for ep in range(n_episodes):
-        obs, _ = env.reset()
+        obs, _ = env.reset(seed=seed + ep)
         done = False
         ep_reward = 0.0
         ep_length = 0

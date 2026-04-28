@@ -9,8 +9,10 @@ Usage:
 
 import os
 import argparse
+import random
 
 import gymnasium as gym
+import numpy as np
 import torch
 from stable_baselines3 import DQN, PPO, A2C, SAC, DDPG, TD3
 from stable_baselines3.common.monitor import Monitor
@@ -118,6 +120,16 @@ def train(
     if icm_only and not icm:
         raise ValueError("--icm_only requires --icm.")
 
+    # ── seed RNGs for reproducibility ─────────────────────────────────
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+        # reduce nondeterminism where possible (may slow training)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
     config = CONFIGS[algo_name]
     env_id = config["env"]
     hyperparams = config["hyperparams"].copy()
@@ -160,6 +172,15 @@ def train(
     # Monitor wraps the env and records per-episode reward/length to CSV
     train_base_env = gym.make(env_id)
     eval_base_env = gym.make(env_id)
+
+    train_base_env.reset(seed=seed)
+    eval_base_env.reset(seed=seed + 10_000)
+
+    # Also seed the action and observation spaces for full determinism
+    train_base_env.action_space.seed(seed)
+    train_base_env.observation_space.seed(seed)
+    eval_base_env.action_space.seed(seed + 10_000)
+    eval_base_env.observation_space.seed(seed + 10_000)
 
     if icm:
         if wrapper and terminal_reward:
