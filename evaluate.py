@@ -1,12 +1,3 @@
-"""
-evaluate.py — Evaluate a trained model and print / save performance stats.
-
-Usage:
-    python evaluate.py --algo PPO
-    python evaluate.py --algo DQN --episodes 20 --render
-    python evaluate.py --algo SAC --model_path results/SAC/models/final_model
-"""
-
 import os
 import argparse
 
@@ -20,36 +11,6 @@ from icm import icm_wrapper
 from train import ALGORITHMS
 
 
-def _run_variant_name(
-    wrapper: bool,
-    terminal_reward: bool,
-    icm: bool = False,
-    icm_only: bool = False,
-) -> str:
-    if icm:
-        if wrapper and terminal_reward:
-            return "wrapped_icm_only_terminal" if icm_only else "wrapped_icm_terminal"
-        return "wrapped_icm_only" if icm_only else "wrapped_icm"
-    if not wrapper:
-        return "baseline"
-    if terminal_reward:
-        return "wrapped_terminal_reward"
-    return "wrapped_reward_shaping"
-
-
-def _default_model_base(
-    algo_name: str,
-    wrapper: bool,
-    terminal_reward: bool,
-    icm: bool = False,
-    icm_only: bool = False,
-    seed: int = 42,
-) -> str:
-    run_variant = _run_variant_name(wrapper, terminal_reward, icm, icm_only)
-    folder = f"{run_variant}_s{seed}"
-    return os.path.join("results", algo_name, folder)
-
-
 def evaluate(
     algo_name: str,
     model_path: str | None = None,
@@ -57,22 +18,11 @@ def evaluate(
     render: bool = False,
     wrapper: bool = False,
     terminal_reward: bool = False,
-    icm: bool = False,
-    icm_only: bool = False,
-    icm_beta: float = 1.0,
     seed: int = 42,
 ) -> dict[str, float]:
-    """Load a trained model and evaluate it for *n_episodes* episodes.
+    """
+    Load a trained model and evaluate it for *n_episodes* episodes.
 
-    Args:
-        algo_name:  Algorithm key (DQN, PPO, …).
-        model_path: Path to a ``.zip`` model file (without extension).
-                    Defaults to ``results/<algo>/models/best_model``.
-        n_episodes: Number of evaluation episodes.
-        render:     Whether to render the environment (requires a display).
-
-    Returns:
-        Dict with keys ``mean_reward``, ``std_reward``, ``mean_length``.
     """
     if algo_name not in CONFIGS:
         raise ValueError(
@@ -80,6 +30,8 @@ def evaluate(
         )
     if terminal_reward and not wrapper:
         raise ValueError("--terminal_reward requires --wrapper.")
+
+    icm = algo_name == "PPO_ICM"
 
     env_id = CONFIGS[algo_name]["env"]
 
@@ -90,7 +42,7 @@ def evaluate(
             wrapper=wrapper,
             terminal_reward=terminal_reward,
             icm=icm,
-            icm_only=icm_only,
+            icm_only=False,
             seed=seed,
         )
         best = os.path.join(base_dir, "models", "best_model")
@@ -107,7 +59,7 @@ def evaluate(
     model = AlgoClass.load(model_path)
     print(f"Loaded {algo_name} from: {model_path}")
 
-    # Evaluation loop
+    # Viz
     render_mode = "human" if render else None
     
     env = gym.make(env_id, render_mode=render_mode)
@@ -118,13 +70,12 @@ def evaluate(
         icm_cfg = CONFIGS[algo_name].get("icm", {})
         env = icm_wrapper(
             env,
-            icm_only=icm_only,
-            icm_beta=icm_beta,
             **icm_cfg,
         )
     elif wrapper:
         env = reward_shaping_wrapper(env)
 
+    # Evaluation loop
     episode_rewards: list[float] = []
     episode_lengths: list[int] = []
 
@@ -160,11 +111,38 @@ def evaluate(
 
     return stats
 
+def _run_variant_name(
+    wrapper: bool,
+    terminal_reward: bool,
+    icm: bool = False,
+    icm_only: bool = False,
+) -> str:
+    if icm:
+        if wrapper and terminal_reward:
+            return "wrapped_icm_only_terminal" if icm_only else "wrapped_icm_terminal"
+        return "wrapped_icm_only" if icm_only else "wrapped_icm"
+    if not wrapper:
+        return "baseline"
+    if terminal_reward:
+        return "wrapped_terminal_reward"
+    return "wrapped_reward_shaping"
+
+def _default_model_base(
+    algo_name: str,
+    wrapper: bool,
+    terminal_reward: bool,
+    icm: bool = False,
+    icm_only: bool = False,
+    seed: int = 42,
+) -> str:
+    run_variant = _run_variant_name(wrapper, terminal_reward, icm, icm_only)
+    folder = f"{run_variant}_s{seed}"
+    return os.path.join("results", algo_name, folder)
 
 # Main
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Evaluate a trained LunarLander agent."
+        description="Evaluate a trained agent."
     )
     parser.add_argument(
         "--algo",
@@ -202,26 +180,10 @@ if __name__ == "__main__":
         help="Use terminal reward only for reward shaping.",
     )
     parser.add_argument(
-        "--icm",
-        action="store_true",
-        help="Apply ICM curiosity wrapper during evaluation.",
-    )
-    parser.add_argument(
-        "--icm_only",
-        action="store_true",
-        help="Suppress extrinsic reward during evaluation.",
-    )
-    parser.add_argument(
-        "--icm_beta",
-        type=float,
-        default=1.0,
-        help="Weight on intrinsic reward in additive mode (default: 1.0).",
-    )
-    parser.add_argument(
         "--seed",
         type=int,
         default=42,
-        help="Seed used during training — selects the matching result directory (default: 42).",
+        help="Seed used during training (default: 42).",
     )
     args = parser.parse_args()
     evaluate(
@@ -231,8 +193,5 @@ if __name__ == "__main__":
         render=args.render,
         wrapper=args.wrapper,
         terminal_reward=args.terminal_reward,
-        icm=args.icm,
-        icm_only=args.icm_only,
-        icm_beta=args.icm_beta,
         seed=args.seed,
     )
