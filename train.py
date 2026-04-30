@@ -60,7 +60,7 @@ def train(
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-        # reduce nondeterminism if it gets slower
+        # reducing nondeterminism because the training gets slower
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
@@ -107,13 +107,13 @@ def train(
     eval_base_env = gym.make(env_id)
 
     train_base_env.reset(seed=seed)
-    eval_base_env.reset(seed=seed + 10_000)
+    eval_base_env.reset(seed=seed + 123456)
 
     # Seed the action and observation spaces
     train_base_env.action_space.seed(seed)
     train_base_env.observation_space.seed(seed)
-    eval_base_env.action_space.seed(seed + 10_000)
-    eval_base_env.observation_space.seed(seed + 10_000)
+    eval_base_env.action_space.seed(seed + 123456)
+    eval_base_env.observation_space.seed(seed + 123456)
 
     if icm:
         if wrapper and terminal_reward:
