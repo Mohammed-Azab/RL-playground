@@ -3,6 +3,8 @@ Hyperparameter configurations for each RL algorithm on LunarLander.
 
 """
 
+import torch
+
 CONFIGS = {
     # ------------------------------------------------------------------
     # Proximal Policy Optimization
@@ -12,6 +14,17 @@ CONFIGS = {
         "timesteps": 1_000_000,
         "hyperparams": {
             "policy": "MlpPolicy",
+            "policy_kwargs": {
+                #"net_arch": [64, 64],
+                #"net_arch": [64, 64, 64],
+                #"net_arch": [64, 64, 64, 64],
+                "net_arch": [64, 64, 64, 64, 64],
+                #"net_arch": [256, 128, 64],
+                #"net_arch": [256, 256],
+                #"net_arch": [256, 256, 128],
+                #"net_arch": [512, 256, 128, 64],
+                "activation_fn": torch.nn.Tanh,
+            },
             "learning_rate": 3e-4,
             "n_steps": 4096,
             "batch_size": 128,
@@ -32,6 +45,10 @@ CONFIGS = {
         "timesteps": 1_000_000,
         "hyperparams": {
             "policy": "MlpPolicy",
+            "policy_kwargs": {
+                "net_arch": [256, 256],
+                "activation_fn": torch.nn.Tanh,
+            },
             "learning_rate": 3e-4,
             "n_steps": 4096,
             "batch_size": 128,
@@ -61,6 +78,10 @@ CONFIGS = {
         "timesteps": 1_000_000,
         "hyperparams": {
             "policy": "MlpPolicy",
+            "policy_kwargs": {
+                "net_arch": [256, 256],
+                "activation_fn": torch.nn.Tanh,
+            },
             "learning_rate": 7e-4,
             "n_steps": 5,
             "gamma": 0.99,
@@ -77,6 +98,10 @@ CONFIGS = {
         "timesteps": 500_000,
         "hyperparams": {
             "policy": "MlpPolicy",
+            "policy_kwargs": {
+                "net_arch": [256, 256],
+                "activation_fn": torch.nn.Tanh,
+            },
             "learning_rate": 1e-3,
             "buffer_size": 1_000_000,
             "batch_size": 256,
@@ -94,6 +119,10 @@ CONFIGS = {
         "timesteps": 500_000,
         "hyperparams": {
             "policy": "MlpPolicy",
+            "policy_kwargs": {
+                "net_arch": [256, 256],
+                "activation_fn": torch.nn.Tanh,
+            },
             "learning_rate": 1e-3,
             "buffer_size": 200_000,
             "batch_size": 100,
@@ -111,6 +140,10 @@ CONFIGS = {
         "timesteps": 500_000,
         "hyperparams": {
             "policy": "MlpPolicy",
+            "policy_kwargs": {
+                "net_arch": [256, 256],
+                "activation_fn": torch.nn.Tanh,
+            },
             "learning_rate": 1e-3,
             "buffer_size": 200_000,
             "batch_size": 100,
